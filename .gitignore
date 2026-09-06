@@ -1,0 +1,13 @@
+# 运行时产物(绝不入库)
+work/
+*.log
+state.json
+*.asar
+*.asar.unpacked/
+DEBUG
+FORCE
+DISABLED
+.speedbench.json
+node_modules/
+__pycache__/
+*.tmp
