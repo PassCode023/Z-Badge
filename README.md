@@ -101,8 +101,8 @@
 
 ```powershell
 # 1. 克隆仓库
-git clone https://github.com/PassCode023/Z_Badge.git
-cd Z_Badge
+git clone https://github.com/PassCode023/Z-Badge.git
+cd Z-Badge
 
 # 2. 复制技能到 ZCode 的技能目录(普通权限)
 powershell -ExecutionPolicy Bypass -File .\install.ps1
