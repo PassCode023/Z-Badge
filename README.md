@@ -4,10 +4,9 @@
 >
 > **⚠️ 免责声明**：本项目通过修改 ZCode 桌面版安装目录内的 `app.asar`（注入渲染组件、主进程 IPC 通道与 preload 桥）实现功能，需要管理员权限写入安装目录。它不是官方功能，可能与 ZCode 的服务条款存在冲突；应用更新可能导致补丁失效（会安全失败并自动重试）；请自行评估风险。项目提供一键还原与总杀开关，详见证lify「卸载与紧急停用」。
 
-<!-- 截图占位：建议放两张图
-docs/screenshot-toolbar.png  （工具栏三枚额度徽章）
-docs/screenshot-turn-end.png （回复末尾三行速度卡）
--->
+| 工具栏额度徽章 | 回复末尾速度解剖卡 |
+|---|---|
+| ![工具栏额度徽章](docs/screenshot-toolbar.png) | ![速度解剖卡](docs/screenshot-turn-end.png) |
 
 ---
 
@@ -102,8 +101,8 @@ docs/screenshot-turn-end.png （回复末尾三行速度卡）
 
 ```powershell
 # 1. 克隆仓库
-git clone https://github.com/<你的用户名>/Z-Badge.git
-cd Z-Badge
+git clone https://github.com/PassCode023/Z_Badge.git
+cd Z_Badge
 
 # 2. 复制技能到 ZCode 的技能目录(普通权限)
 powershell -ExecutionPolicy Bypass -File .\install.ps1
