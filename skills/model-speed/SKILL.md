@@ -43,6 +43,21 @@ node <skill目录>/scripts/install.mjs --uninstall # 移除
 - **四个数字的关系**:`单次均耗 = 首字均 + 生成均`;`Σ耗时 = 单次均耗 × 次数`(中位数≠均值,长调用拉高总和);`首字 = 排队+网络+预填充(读全部上下文),不产出 token;GLM 思考档位的思考时间也计入首字(动笔前想)`
 - **两份 SKILL.md 同步约束**:本节口径与 zbadge SKILL.md 的 ⚡ 三行展示口径互为镜像,修改任一方须同步另一方
 
+## workflow 段(v3.2,2026-09-30)
+
+回合条目可带 `wf` 数组:本轮"处理其完成通知"的 dynamic-workflow 运行,zbadge 在 ⚡ 行下方逐条渲染 🔩 行:
+
+```
+🔩 workflow「看板改版演练」462.1k tokens（计费口径） · 8 子代理 · 墙钟 7m27s
+```
+
+failed/cancelled 追加 ` · 失败`/` · 已停止`。
+
+- **数据源**:应用 db.sqlite 的 `dwf_run` 表(`parent_session_id` 归会话;`spent_tokens`;`time_created/time_updated` 为毫秒纪元) + `dwf_actor` 行数=子代理数;只取 status ∈ completed/failed/cancelled,单回合最多 5 条
+- **归因窗口**:`(上一回合 ts, 本回合末次调用+60s]`——后台运行通常在回合开始前刚完成、完成通知随本回合进入上下文,故归到展示通知的那一轮;无历史时回看 30 分钟。已记入其他回合条目的运行按 run id 去重;同回合重算(Stop/UserPromptSubmit 双时机)窗口确定性一致,不做同回合去重(否则兜底重写会抹掉 wf)
+- **口径警示(与 ⚡ 行并列但不可互除)**:workflow 的 tokens 是**计费口径**——Σ各子代理会话全部 API 调用的输入+输出,每轮调用都重发上下文故远大于生成量(单个会话起步即数万);墙钟含并行与限流等待,不等于 Σ各会话耗时。速度行测的是主会话输出 tokens 与推理耗时,两者是先后接力的不同统计域
+- **测试**:环境变量 `MS_ROLLOUT_DIR / MS_STATE_DIR / MS_DB_PATH` 覆盖数据源;夹具测试在 workspace `tmp-ms-test/`(归因/去重/窗口排除/字段映射)
+
 ## 2. 历史统计
 
 ```bash

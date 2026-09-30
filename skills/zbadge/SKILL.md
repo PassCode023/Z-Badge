@@ -31,6 +31,11 @@ description: 在 ZCode 桌面应用的聊天工具栏中、上下文容量环左
 ⏱ 单次均 46.8 秒 [608 秒 ÷ 13 次调用] = 首字 2.3 秒 + 生成 44.5 秒
 🤖 GLM-5.3-Flash · 思考最高
 ```
+  **workflow 段(v3.4,2026-09-30)**:条目带 `wf` 数组时在 🤖 行下方逐条追加 🔩 行,每条一个运行:
+```
+🔩 workflow「看板改版演练」462.1k tokens（计费口径） · 8 子代理 · 墙钟 7m27s
+```
+  failed/cancelled 追加 ` · 失败`/` · 已停止`。**口径与速度行不同,并列但不可互除**:tokens=计费口径(Σ各子代理会话全部 API 调用,含每轮重发的上下文,非生成量)、墙钟=起止时间差(含并行与限流);悬停提示带口径说明。数据由 model-speed 钩子 v3.2 从应用 db.sqlite 的 dwf_run/dwf_actor 表采集(parent_session_id 归会话,归因窗口=上一回合 ts→本回合末次调用+60s,跨回合按 run id 去重、同回合重算幂等——详见 model-speed SKILL.md「workflow 段」节)。渲染侧实现=zSpdX 内 WFA/KF/DUF/WST/WEL,拼在 Fragment children `.concat(WEL)`;逆转正则不变。
   **加权 TPS 口径以 model-speed SKILL.md 为唯一权威**。`ttftSum/ttftN` 由钩子从应用 db.sqlite 的 model_usage 表按 turnId 采集(time_to_first_token_ms,与 rollout 可用调用按"输出tokens相等+耗时最接近≤3s"贪心配对——两端计时口径差 ~40-70ms,精确相等永不命中),`ttftN=0` → 第二行退化为仅均耗+次数;`variant`→思考强度中文映射(low 低/medium 中/high 高/max 最高,未知原样)。**每轮保留(v3.3)**:数据源改为 speed-history.json(数组,≤50 轮/7 天窗),zSpdX 按**回合起点时间窗 ±5s** 匹配本轮回合条目(渲染层回合 turnId 是 msg_ 消息域 ID,与条目的 turn_ 运行时域不同源,禁止跨 ID 匹配——DL-049);单元无起点时间时退回 isLastTurn+最新条目;无匹配→节流追读(Stop/回填可能未写盘)。读取经 **IPC 兜底链**:渲染进程实测无 fs(nodeIntegration:false+contextIsolation+sandbox:true),补丁三个注入点——①渲染块(工具栏组件+回合末尾 zSpdX);②out/main/index.js 尾追加 ipcMain.handle('zbadge:read-speed') 只读通道(ESM 动态 import,64KB 上限);③out/preload/index.cjs 尾追加 contextBridge 暴露 window.zbadgeSpeed。②③以 `;/*zbadge-patch*/` 标记追加/截断逆转,各过整文件语法门(module/commonjs)。**注入点**:tnt 内锚点 `,e.assistantTailRows.length>0?`(全文件唯一计数断言,不唯一即 fail 拒打),插入自包含完整元素 `,(0,$.jsx)(zSpdX,{tg:e})`——零括号塔拼接(DL-043);逆转按注入字面量正则移除。修改 turn-stats 口径与展示口径须两份 SKILL.md 同步。
 
 - **数据源**:个人/团队套餐走 `codingPlanUsageRemaining` 通道(5 小时=`TOKENS_LIMIT,unit3`、每周=`unit6`、ZCode MCP=快照独立字段 `visibleSnapshot.mcpQuota.aggregate`,勿用 TIME_LIMIT,5,1);体验套餐回退 `startPlanBalance` 通道(单枚"体验"徽章,`remaining/(number??unit)`,chart-4 色);API 方式两通道皆空 → 隐藏(正确行为)。

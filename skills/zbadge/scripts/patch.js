@@ -362,10 +362,11 @@ const def =
 '(0,' + jsx + '.jsx)(`span`,{className:`font-mono text-ui-sm tabular-nums`,children:e.text??' + fmt + '(n,e.limit)})]},e.key))})]})})' +
 '}catch(_){return null}}' +
 // ---- ⚡ 回合末尾速度行(zSpdX,注入 tnt 的回合 section children) ----
-// 三行(v3.2,2026-09-05 用户逐字定稿):
+// 三行+workflow 段(v3.4,2026-09-30;三行为 v3.2 2026-09-05 用户逐字定稿):
 //   ⚡ 本轮加权速度 28 tokens/s [16,886 tokens ÷ 608 秒]
 //   ⏱ 单次均 46.8 秒 [608 秒 ÷ 13 次调用] = 首字 2.3 秒 + 生成 44.5 秒
 //   🤖 GLM-5.3-Flash · 思考最高
+//   🔩 workflow「名」462.1k tokens（计费口径） · 8 子代理 · 墙钟 7m27s   ← 仅当本轮确有完成的运行
 // 数据:model-speed 钩子(Stop 主/UserPromptSubmit 兜底)写 last-speed.json,经
 // 主进程 ipcMain.handle('zbadge:read-speed') → preload contextBridge → window.zbadgeSpeed。
 // ttftSum/ttftN 来自应用 db.sqlite 的 model_usage 表(time_to_first_token_ms,按
@@ -403,11 +404,26 @@ const def =
 'c2.push((0,' + jsx + '.jsx)(`span`,{children:` = 首字 `}),(0,' + jsx + '.jsx)(`span`,{className:`font-mono tabular-nums`,children:a.toFixed(1)}),(0,' + jsx + '.jsx)(`span`,{children:` 秒 + 生成 `}),(0,' + jsx + '.jsx)(`span`,{className:`font-mono tabular-nums`,children:b.toFixed(1)}),(0,' + jsx + '.jsx)(`span`,{children:` 秒`}))}' +
 'let c3=[(0,' + jsx + '.jsx)(`span`,{children:`🤖`}),(0,' + jsx + '.jsx)(`span`,{children:` `+(e.model||`未知模型`)})];' +
 'if(e.variant)c3.push((0,' + jsx + '.jsx)(`span`,{children:` · 思考`+(VM[e.variant]||e.variant)}));' +
+// v3.4 workflow 段:entry.wf(model-speed 钩子 v3.2 从 db.sqlite dwf_run/dwf_actor 采集,
+// 归因到处理其完成通知的回合)。每条一行,与速度行并列;非 completed 追加状态后缀。
+// 口径写在悬停提示里:tokens=计费口径(Σ各子代理会话全部API调用,含上下文重发,非生成量);
+// 墙钟=起止时间差(含并行与限流等待)。
+'let WFA=Array.isArray(e.wf)?e.wf:[];' +
+'let KF=v=>v>=1e6?(v/1e6).toFixed(2)+`M`:v>=1000?(v/1000).toFixed(1)+`k`:String(v??0);' +
+'let DUF=x=>{let m2=Math.floor((x||0)/6e4),s2=Math.round((x||0)/1000)%60;return m2>0?m2+`m`+String(s2).padStart(2,`0`)+`s`:s2+`s`};' +
+'let WST={completed:``,failed:` · 失败`,cancelled:` · 已停止`};' +
+'let WEL=WFA.map(w1=>(0,' + jsx + '.jsxs)(`span`,{className:`inline-flex select-none items-center gap-1 text-ui-sm text-foreground-subtlest`,"data-testid":`zbadge-turn-workflow`,' +
+'title:`workflow「`+(w1.name||w1.id||`?`)+`」 · `+String(w1.id||``).slice(0,26)+` · 起 `+new Date(w1.created||0).toLocaleTimeString()+` · tokens=计费口径(Σ各子代理会话全部API调用,含上下文重发) · 墙钟=起止时间差(含并行与限流)`,' +
+'children:[(0,' + jsx + '.jsx)(`span`,{children:`🔩`}),(0,' + jsx + '.jsx)(`span`,{children:` workflow「`+(w1.name||w1.id||`?`)+`」`}),' +
+'(0,' + jsx + '.jsx)(`span`,{className:`font-mono tabular-nums`,children:KF(w1.tokens||0)}),(0,' + jsx + '.jsx)(`span`,{children:` tokens（计费口径）`}),' +
+'(0,' + jsx + '.jsx)(`span`,{children:` · `+(w1.agents??0)+` 子代理`}),' +
+'(0,' + jsx + '.jsx)(`span`,{children:` · 墙钟 `}),(0,' + jsx + '.jsx)(`span`,{className:`font-mono tabular-nums`,children:DUF(w1.wallMs||0)}),' +
+'(0,' + jsx + '.jsx)(`span`,{children:WST[w1.status]??``})]}));' +
 'return(0,' + jsx + '.jsx)(' + errName + ',{c:(0,' + jsx + '.jsxs)(' + jsx + '.Fragment,{children:[' +
 '(0,' + jsx + '.jsxs)(`span`,{className:`inline-flex select-none items-center gap-1 text-ui-sm text-foreground-subtlest`,"data-testid":`zbadge-turn-speed`,' +
 'title:`本轮加权 TPS(Σ输出token÷Σ推理耗时) · `+(e.model||`未知模型`)+(e.variant?` · 思考`+(VM[e.variant]||e.variant):``)+` · `+new Date(e.ts).toLocaleString(),children:c1}),' +
 '(0,' + jsx + '.jsxs)(`span`,{className:`inline-flex select-none items-center gap-1 text-ui-sm text-foreground-subtlest`,children:c2}),' +
-'(0,' + jsx + '.jsxs)(`span`,{className:`inline-flex select-none items-center gap-1 text-ui-sm text-foreground-subtlest`,children:c3})]})})}' +
+'(0,' + jsx + '.jsxs)(`span`,{className:`inline-flex select-none items-center gap-1 text-ui-sm text-foreground-subtlest`,children:c3})].concat(WEL)})})}' +
 'catch(_){try{window.__zspd&&(window.__zspd.rs=`err`)}catch(_){}return null}}';
 
 const call =

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// model-speed skill · 测速钩子脚本(v3.1,静默版)
+// model-speed skill · 测速钩子脚本(v3.2,静默版)
 // 双时机触发(Stop=主;UserPromptSubmit=兜底):从本机 rollout 记录中计算"刚完成的这一轮"
 // main 调用的加权 TPS,静默写入 ~/.zcode/zbadge/last-speed.json,供 zbadge 注入的
 // 对话末尾 ⚡ 速度行读取(按 turnId 精确归因)。
@@ -7,19 +7,24 @@
 // - UserPromptSubmit(用户提交下一条):最后一组仍是刚完成轮,同值幂等重写(兜底中断等
 //   Stop 未触发的情况)。
 // 不注入 additionalContext、模型零参与、零上下文开销。
+// v3.2 新增 workflow 段:回合条目可带 wf 数组(本轮"处理其完成通知"的 workflow 运行,
+// 从 db.sqlite 的 dwf_run/dwf_actor 表采集:名称/状态/计费 tokens/子代理数/墙钟),
+// 由 zbadge ⚡ 行下方逐条渲染 🔎🔩 行。计费口径=Σ各子代理会话全部 API 调用(含上下文重发)。
 //
 // 约定:
 //   argv[2]          会话 ID(${CLAUDE_SESSION_ID} 展开;可省略走兜底)
 //   stdin            钩子输入 JSON(可能含 session_id,作次选来源)
 //   输出             无(静默);任何情况下 exit 0
+//   测试钩子         环境变量 MS_ROLLOUT_DIR / MS_STATE_DIR / MS_DB_PATH 覆盖数据源(仅测试用)
 
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const ROLLOUT_DIR = path.join(os.homedir(), '.zcode', 'cli', 'rollout');
-const STATE_DIR = path.join(os.homedir(), '.zcode', 'zbadge');
+const ROLLOUT_DIR = process.env.MS_ROLLOUT_DIR || path.join(os.homedir(), '.zcode', 'cli', 'rollout');
+const STATE_DIR = process.env.MS_STATE_DIR || path.join(os.homedir(), '.zcode', 'zbadge');
 const STATE_FILE = path.join(STATE_DIR, 'last-speed.json');
+const DB_PATH = process.env.MS_DB_PATH || path.join(os.homedir(), '.zcode', 'cli', 'db', 'db.sqlite');
 const TAIL_BYTES = 16 * 1024 * 1024; // 单行可达数百 KB(含全量消息窗口),读大尾部防漏计
 const MAX_LOOKBACK_LINES = 300;
 const MIN_OUT_TOKENS = 50; // 口径:单调用输出 <50 tokens 视为探活/摘要类微调用,不计入
@@ -176,7 +181,7 @@ function collectTurnCalls(lines) {
 async function dbModelRows(sessionId) {
   try {
     if (!sessionId) return null;
-    const dbPath = path.join(os.homedir(), '.zcode', 'cli', 'db', 'db.sqlite');
+    const dbPath = DB_PATH;
     if (!fs.existsSync(dbPath)) return null;
     let DatabaseSync;
     try { ({ DatabaseSync } = await import('node:sqlite')); } catch { return null; }
@@ -192,6 +197,46 @@ async function dbModelRows(sessionId) {
     } finally { try { db.close(); } catch {} }
   } catch {
     return null;
+  }
+}
+
+// workflow 运行段(dwf_run/dwf_actor 表,v3.2):采集本会话"刚完成、且由本回合处理其
+// 完成通知"的运行。归因窗口 = (sinceMs, untilMs]:主用法 since=上一回合的 ts(回合末次
+// 调用完成时刻)、until=本回合末次调用+60s——后台运行通常在本回合开始前一点完成、
+// 通知随下一回合进入上下文,该窗口把它归到"展示通知的那一轮";兜底(无历史)回看 30 分钟。
+// excludeIds = 已写入过历史条目 wf 的运行(幂等,UserPromptSubmit 重算不重复)。
+// 口径:tokens=db 的 spent_tokens(计费口径,Σ各子代理会话全部 API 调用,含上下文重发);
+// agents=dwf_actor 行数;wallMs=time_updated-time_created(墙钟,含并行与限流等待)。
+async function dbWorkflowRuns(sessionId, sinceMs, untilMs, excludeIds) {
+  try {
+    if (!sessionId || !fs.existsSync(DB_PATH)) return [];
+    let DatabaseSync;
+    try { ({ DatabaseSync } = await import('node:sqlite')); } catch { return []; }
+    let db;
+    try { db = new DatabaseSync(DB_PATH, { readOnly: true }); } catch { return []; }
+    try {
+      const rows = db.prepare(
+        "select r.id, r.name, r.status, r.spent_tokens as tokens, r.time_created as created, r.time_updated as updated, " +
+        "(select count(*) from dwf_actor a where a.run_id = r.id) as agents " +
+        "from dwf_run r where r.parent_session_id=? and r.status in ('completed','failed','cancelled') " +
+        "and r.time_updated>? and r.time_updated<=? order by r.time_updated limit 8"
+      ).all(sessionId, sinceMs, untilMs);
+      return rows
+        .filter(r => !excludeIds.has(r.id))
+        .map(r => ({
+          id: r.id ?? '',
+          name: r.name ?? '',
+          status: r.status ?? 'completed',
+          tokens: r.tokens ?? 0,
+          agents: r.agents ?? 0,
+          created: r.created ?? 0,
+          updated: r.updated ?? 0,
+          wallMs: Math.max(0, (r.updated ?? 0) - (r.created ?? 0)),
+        }))
+        .slice(0, 5);
+    } finally { try { db.close(); } catch {} }
+  } catch {
+    return [];
   }
 }
 
@@ -348,6 +393,32 @@ async function main() {
   }
   // 静默写状态文件(当前轮,调试/兼容)与速度历史(每轮保留+7 天回填);不再注入 additionalContext。
   if (state) {
+    // workflow 段(v3.2):归因窗口上一回合 ts → 本回合末次调用+60s;已入历史的运行不重复。
+    // 失败静默——workflow 段缺失只损失 🔎 行,不影响速度行。
+    try {
+      let prevTs = null;
+      const done = new Set();
+      let hist = null;
+      try { hist = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8')); } catch {}
+      if (Array.isArray(hist)) {
+        for (const en of hist) {
+          if (!en) continue;
+          // 同回合条目(兜底重算)不参与去重与 prevTs——归因窗口由 rollout 数据确定性
+          // 推出,同回合重算得到同一集合;跨回合才排除,防重叠窗口双记。
+          const sameTurn = (state.turnId && en.turnId)
+            ? en.turnId === state.turnId
+            : (state.startedAt && Number.isFinite(en.startedAt) && Math.abs(en.startedAt - state.startedAt) <= 3000);
+          if (sameTurn) continue;
+          for (const w of (Array.isArray(en.wf) ? en.wf : [])) if (w && w.id) done.add(w.id);
+          if (state.startedAt && Number.isFinite(en.startedAt) && en.startedAt < state.startedAt) {
+            prevTs = prevTs === null ? (en.ts ?? en.startedAt) : Math.max(prevTs, en.ts ?? en.startedAt);
+          }
+        }
+      }
+      const since = prevTs ?? (state.startedAt ? state.startedAt - 30 * 60e3 : Date.now() - 30 * 60e3);
+      const wfs = await dbWorkflowRuns(effSid, since, (state.ts ?? Date.now()) + 60e3, done);
+      if (wfs.length) state.wf = wfs;
+    } catch {}
     try { writeState(state); } catch { /* 静默失败,不影响对话 */ }
     try { updateHistory(effSid, state, dbRows); } catch { /* 静默失败 */ }
   }
