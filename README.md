@@ -164,6 +164,7 @@ node auto-repatch.js --status   # 补丁状态
 skills/
   zbadge/            展示层技能(注入补丁 + 自愈自动化)
     SKILL.md           agent 说明书(安装/运维/卸载的执行手册)
+    package.json       技能包标记(type: commonjs,防宿主目录 ESM 误判)
     scripts/
       patch.js           动态锚点发现与注入(渲染/主进程/preload 三处)
       auto-repatch.js    一条龙:提取→逆转→基线→注入→校验→打包→应用
