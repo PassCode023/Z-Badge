@@ -47,7 +47,7 @@ description: 在 ZCode 桌面应用的聊天工具栏中、上下文容量环左
 ## 首次安装(全新机器)
 
 假设技能已位于 ~/.agents/skills/zbadge(仓库 install.ps1 或手动复制)。让用户对 ZCode 说「安装 zbadge」,然后按序执行:
-1. `node scripts/auto-repatch.js`——全流程:提取 asar→动态锚点发现→注入→语法门→verify-pack→应用(非管理员会经 run-elevated.ps1 弹一次 UAC)。安装目录非默认位置时先设环境变量 ZCODE_INSTALL_DIR。
+1. `node scripts/auto-repatch.js`——全流程:提取 asar→动态锚点发现→注入→语法门→verify-pack→应用(非管理员会经 run-elevated.ps1 弹一次 UAC)。安装目录非默认位置时先设环境变量 ZCODE_INSTALL_DIR。**ZCode.exe 在运行时自动延后**(2026-10-11 加固):运行中的应用缓存着 asar 头偏移表,此时换文件会让懒加载 chunk 读到相邻文件的字节、整页报 `SyntaxError: Unexpected token`(2026-10-11 使用统计页两图表正是此伤);守卫在重型流水线之前,延后不耗 CPU,应用关闭后的下一个 10 分钟周期自动重打。
 2. 提权运行 `scripts/install-autopatch-task.ps1`(管理员 PowerShell)——自动生成 ~/.zcode/zbadge/trampoline.vbs 并注册 10 分钟自愈任务 ZbadgeAutoPatch。
 3. 提醒用户彻底重启 ZCode(含托盘)加载补丁;随后 model-speed 的钩子也会随重启生效。
 

@@ -1,7 +1,9 @@
-// zcode-quota-badge / auto-repatch.js  (加固版 2026-08-30)
+// zcode-quota-badge / auto-repatch.js  (加固版 2026-08-30 / 2026-10-11)
 // 一条龙自动重打补丁:check → extract → merge unpacked → revert → 基线 → inject →
 // 语法校验 → pack → verify-pack → apply(提权)→ 复核。
 // P0 加固:① work/DISABLED 存在 = 总杀开关,静默退出;② 技能目录自检。
+// P1 加固(2026-10-11):ZCode.exe 运行中 = 整条流水线延后。运行中的应用缓存 asar
+// 头偏移表,换文件 → 懒加载 chunk 读到错位字节 → SyntaxError: Unexpected token。
 // 用法: node auto-repatch.js [--status|--no-apply|--force]
 
 'use strict';
@@ -87,6 +89,16 @@ function isElevated() {
   const r = spawnSync('cmd', ['/c', 'net', 'session'], { encoding: 'utf8', stdio: 'ignore' });
   return r.status === 0;
 }
+// ZCode 正在运行时绝不换 asar:Electron 主进程缓存着 asar 头(偏移表),换文件后
+// 偏移错位,懒加载 chunk 会读到相邻文件的字节,报 SyntaxError: Unexpected token。
+function zcodeRunning() {
+  const r = spawnSync('cmd', ['/c', 'tasklist', '/FI', 'IMAGENAME eq ZCode.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf8' });
+  if (r.status !== 0) return { running: false, pids: [] };
+  const pids = String(r.stdout).split('\n')
+    .map((l) => l.trim()).filter((l) => /^"ZCode\.exe"/i.test(l))
+    .map((l) => l.split('","')[1]).filter(Boolean);
+  return { running: pids.length > 0, pids };
+}
 
 async function currentState() {
   if (!fs.existsSync(TARGET)) return { status: 'no-target' };
@@ -112,6 +124,16 @@ async function currentState() {
   if (st.status === 'patched' && !forced) { log('already patched, nothing to do'); unlock(); process.exit(0); }
   if (st.status === 'patched' && forced) log(`force: revert + re-inject on patched install (${args.has('--force') ? '--force' : 'FORCE flag file'})`);
   else log(`patch invalidated (status=${st.status}) — full pipeline start`);
+
+  // 延后守卫:应用运行中 = 主进程持有旧 asar 头缓存,现在换文件只会把运行中的
+  // 应用打断(懒加载 chunk 全部 SyntaxError)。反正 UI 补丁也要重启才生效,
+  // 直接整条流水线延后,等应用关闭后的下一个轮询再打。
+  const app = zcodeRunning();
+  if (app.running) {
+    log(`ZCode running (pids=${app.pids.join(',')}) — defer repack; will retry on next tick after app exits`);
+    unlock();
+    process.exit(0);
+  }
 
   rmrf(EXTRACTED); fs.mkdirSync(EXTRACTED, { recursive: true });
   asar(['extract', TARGET, EXTRACTED]);
